@@ -7,10 +7,16 @@ from ortools.constraint_solver import routing_enums_pb2
 from ortools.constraint_solver import pywrapcp
 from PIL import Image, ImageDraw
 import os
+import time
+import copy
+from itertools import permutations
 
 # Change these file names to the relevant files.
-ORIGINAL_IMAGE = "images/smileyface-inverted.png"
-IMAGE_TSP = "images/smileyface-inverted-1024-stipple.tsp"
+ORIGINAL_IMAGE = "images/ww-5000-stipple.png"
+IMAGE_TSP = "images/ww-5000-stipple.tsp"
+NUMBER_OF_POINTS = 4989
+NUMBER_OF_PARTITIONS = 8
+INITIAL_VERTEX = 0
 
 def create_data_model():
     """Stores the data for the problem."""
@@ -67,8 +73,12 @@ def get_routes(solution, routing, manager):
     for route_nbr in range(routing.vehicles()):
       index = routing.Start(route_nbr)
       route = [manager.IndexToNode(index)]
-      while not routing.IsEnd(index):
-        index = solution.Value(routing.NextVar(index))
+      #while not routing.IsEnd(index):
+      #  index = solution.Value(routing.NextVar(index))
+      counter = 0
+      while counter < len(solution):
+        counter += 1
+        index = solution[index]
         route.append(manager.IndexToNode(index))
       routes.append(route)
     return routes[0]
@@ -91,8 +101,106 @@ def draw_routes(nodes, path):
     tsp_image.save(FINAL_IMAGE)
     print("TSP solution has been drawn and can be viewed at", FINAL_IMAGE)
 
+def nearest_neighbors_solution(distance_matrix):
+    visited = {i: False for i in range(NUMBER_OF_POINTS)}
+    nearest_neighbors = {i: -1 for i in range(NUMBER_OF_POINTS)}
+    last_vertex = INITIAL_VERTEX
+    should_continue = True
+
+    while should_continue:
+        should_continue = False
+        visited[last_vertex] = True
+        shortest_distance = float("inf")
+        closest_neighbor = -1
+
+        for i in distance_matrix[last_vertex]:
+            if distance_matrix[last_vertex][i] < shortest_distance and not (visited[i]):
+                shortest_distance = distance_matrix[last_vertex][i]
+                closest_neighbor = i
+                should_continue = True
+
+        if should_continue:
+            nearest_neighbors[last_vertex] = closest_neighbor
+            last_vertex = closest_neighbor
+        else:
+            nearest_neighbors[last_vertex] = INITIAL_VERTEX
+    return nearest_neighbors
+
+def two_opt_solution(distance_matrix):
+    solution = nearest_neighbors_solution(distance_matrix)
+    original_group = convert_solution_to_group(solution)
+    partitions = NUMBER_OF_PARTITIONS
+
+    while(partitions > 0):
+        two_opt(distance_matrix, original_group, partitions)
+        partitions = int(partitions / 2)
+
+    new_solution = convert_group_to_solution(original_group)
+
+    return new_solution
+
+def two_opt(distance_matrix, group, partitions):
+    partition_size = int(len(group)/partitions)
+
+    for k in range(partitions):
+        while True:
+            min_change = 0
+            min_i = -1
+            min_j = -1
+            for i in range(1 + (k*partition_size), ((k+1)*partition_size)-2):
+                for j in range(i+1, ((k+1)*partition_size)):
+                    u = group[i-1]
+                    v = group[i]
+                    w = group[j]
+                    x = group[(j+1) % ((k+1)*partition_size)]
+                    current_distance = (distance_matrix[u][v] + distance_matrix[w][x])
+                    new_distance = (distance_matrix[u][w] + distance_matrix[v][x])
+                    change = new_distance - current_distance
+
+                    if change < min_change:
+                        min_change = change
+                        min_i = i
+                        min_j = j
+
+            swap_edges(group, min_i, min_j)
+            if min_change == 0:
+                break
+            print(min_change)
+
+def swap_edges(group, v, w):
+    #Reverses the entire slice, from vertex v to vertex w (including v and w)
+    group[v:w+1] = group[v:w+1][::-1]
+
+def convert_group_to_solution(group):
+    solution = {}
+
+    for i in range(len(group)-1):
+        solution[group[i]] = group[i+1]
+
+    solution[group[-1]] = NUMBER_OF_POINTS
+    print(solution)
+    return solution
+
+def convert_solution_to_group(solution):
+    head = INITIAL_VERTEX
+    group = []
+
+    for i in range(NUMBER_OF_POINTS):
+        group.append(head)
+        head = solution[head]
+
+    return group
+
+def calculate_group_cost(distance_matrix, group):
+    cost = 0
+    for i in range(len(group)):
+        cost += distance_matrix[group[i]][group[(i+1) % len(group)]]
+    return cost
+
 def main():
     """Entry point of the program."""
+    starting_moment = time.time()
+
     # Instantiate the data problem.
     print("Step 1/5: Initialising variables")
     data = create_data_model()
@@ -126,17 +234,21 @@ def main():
 
     # Solve the problem.
     print("Step 4/5: Solving")
-    solution = routing.SolveWithParameters(search_parameters)
+    #solution = routing.SolveWithParameters(search_parameters)
+    #solution = nearest_neighbors_solution(distance_matrix)
+    solution = two_opt_solution(distance_matrix)
 
     # Print solution on console.
     if solution:
         #print_solution(manager, routing, solution)
         print("Step 5/5: Drawing the solution")
         routes = get_routes(solution, routing, manager)
-        draw_routes(data['locations'],routes)
+        draw_routes(data['locations'], routes)
     else:
         print("A solution couldn't be found :(")
-    
 
+    finishing_moment = time.time()
+    print("Total time elapsed during execution: " + str(finishing_moment - starting_moment) + " seconds")
+    print("Total distance: " + str(calculate_group_cost(distance_matrix, convert_solution_to_group(solution))))
 if __name__ == '__main__':
     main()
