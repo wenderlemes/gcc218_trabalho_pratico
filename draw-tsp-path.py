@@ -12,9 +12,11 @@ import copy
 from itertools import permutations
 
 # Change these file names to the relevant files.
-ORIGINAL_IMAGE = "images/ww-5000-stipple.png"
-IMAGE_TSP = "images/ww-5000-stipple.tsp"
-NUMBER_OF_POINTS = 4989
+ORIGINAL_IMAGE = "images/brother-1024-stipple.png"
+IMAGE_TSP = "images/brother-1024-stipple.tsp"
+
+# Change the number of points according to the base tsp file you are using. 
+NUMBER_OF_POINTS = 1024
 NUMBER_OF_PARTITIONS = 8
 INITIAL_VERTEX = 0
 
